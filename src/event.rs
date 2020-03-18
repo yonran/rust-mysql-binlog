@@ -56,6 +56,8 @@ pub enum TypeCode {
 }
 
 impl TypeCode {
+    /// Reference: MySQL Internals Manual -> MySQL Client/Server Protocol -> Replication Protocol -> Binlog Event -> Binlog Event Type
+    /// https://dev.mysql.com/doc/internals/en/binlog-event-type.html
     fn from_byte(b: u8) -> Self {
         match b {
             0 => TypeCode::Unknown,
@@ -155,7 +157,9 @@ fn parse_one_row<R: Read+Seek>(mut cursor: &mut R, this_table_map: &SingleTableM
             MySQLValue::Null
         } else {
             //println!("parsing column {} ({:?})", i, column_definition);
-            column_definition.read_value(&mut cursor)?
+            let val = column_definition.read_value(&mut cursor)?;
+            debug!("read_value -> {:?}", val);
+            val
         };
         row.push(Some(val));
         null_index += 1;
@@ -241,8 +245,13 @@ fn parse_rows_event<R: Read+Seek>(type_code: TypeCode, data_len: usize, mut curs
 
 impl EventData {
     fn from_data(type_code: TypeCode, data: &[u8], table_map: Option<&TableMap>) -> Result<Option<Self>, Error> {
+        // reference: MySQL Internals -> The Binary Log -> Event Data for Specific Event Types
+        // https://dev.mysql.com/doc/internals/en/event-data-for-specific-event-types.html
+        // and also reference: MySQL Internals Manual -> MySQL Client/Server Protocol -> Replication Protocol -> Binlog Event
+        // https://dev.mysql.com/doc/internals/en/binlog-event.html
         let mut cursor = Cursor::new(data);
         match type_code {
+            // https://dev.mysql.com/doc/internals/en/format-description-event.html
             TypeCode::FormatDescriptionEvent => {
                 let binlog_version = cursor.read_u16::<LittleEndian>()?;
                 if binlog_version != 4 {
@@ -288,6 +297,10 @@ impl EventData {
                 Ok(Some(EventData::QueryEvent { thread_id, exec_time: execution_time, error_code, schema, query: statement}))
             }
             TypeCode::TableMapEvent => {
+                // reference: MySQL Internals Manual → MySQL Client/Server Protocol → Row-Based Replication -> TABLE_MAP_EVENT
+                // https://dev.mysql.com/doc/internals/en/table-map-event.html
+                // also described a bit in MySQL Internals Manual -> The Binary Log -> Event Data for Specific Event Types
+                // https://dev.mysql.com/doc/internals/en/event-data-for-specific-event-types.html
                 let mut table_id_buf = [0u8; 8];
                 cursor.read_exact(&mut table_id_buf[0..6])?;
                 let table_id = LittleEndian::read_u64(&table_id_buf);
@@ -320,6 +333,10 @@ impl EventData {
                 Ok(Some(EventData::TableMapEvent { table_id, schema_name, table_name, columns: final_columns, null_bitmap: nullable_bitmap }))
             }
             TypeCode::WriteRowsEventV1 | TypeCode::WriteRowsEventV2 => {
+                // reference: MySQL Internals Manual → MySQL Client/Server Protocol → Row-Based Replication -> ROWS_EVENT
+                // https://dev.mysql.com/doc/internals/en/rows-event.html
+                // also described a bit in MySQL Internals Manual -> The Binary Log -> Event Data for Specific Event Types
+                // https://dev.mysql.com/doc/internals/en/event-data-for-specific-event-types.html
                 let ev = parse_rows_event(type_code, data.len(), &mut cursor, table_map)?;
                 Ok(Some(EventData::WriteRowsEvent { table_id: ev.table_id, rows: ev.rows }))
             },
@@ -359,6 +376,12 @@ const HAS_CHECKSUM: bool = true;
 
 
 impl Event {
+    /// Parse one Log_event
+    /// Reference: MySQL Internals Manual -> The Binary Log -> Event Structure
+    /// https://dev.mysql.com/doc/internals/en/event-structure.html
+    /// also Reference: MySQL Internals Manual -> MySQL Client/Server Protocol -> Replication Protocol -> Binlog Event header
+    /// https://dev.mysql.com/doc/internals/en/binlog-event-header.html
+    /// Also mysql-server/sql/log_event.{h,cc}
     pub fn read<R: Read>(reader: &mut R, offset: u64) -> Result<Self, Error> {
         let mut header = [0u8; 19];
         match reader.read_exact(&mut header) {
@@ -374,6 +397,7 @@ impl Event {
         let next_position = c.read_u32::<LittleEndian>()?;
         let flags = c.read_u16::<LittleEndian>()?;
         let mut data_length: usize = (event_length - 19) as usize;
+
         if HAS_CHECKSUM {
             data_length -= 4;
         }

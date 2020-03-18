@@ -6,8 +6,8 @@ use crate::column_types::ColumnType;
 #[derive(Debug)]
 /// Opaque reference to a table map, intended to be consumed by [`Event`]
 pub struct SingleTableMap {
-    pub(crate) schema_name: String,
-    pub(crate) table_name: String,
+    schema_name: String,
+    table_name: String,
     pub(crate) columns: Vec<ColumnType>,
 }
 
@@ -29,6 +29,7 @@ impl TableMap {
 
     pub fn handle(&mut self, table_id: u64, schema_name: String, table_name: String, columns: Vec<ColumnType>) {
         let map = SingleTableMap { schema_name, table_name, columns };
+        debug!("Table_map_event {:?} inserted for id {}", map, table_id);
         self.inner.insert(table_id, map);
     }
 

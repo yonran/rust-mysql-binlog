@@ -83,6 +83,11 @@ impl ColumnType {
     }
 
     pub(crate) fn read_metadata<R: Read>(self, cursor: &mut R) -> Result<Self, io::Error> {
+        // Reference: according to MySQL Internals Manual -> The Binary Log -> Event Data for Specific Event Types
+        // https://dev.mysql.com/doc/internals/en/event-data-for-specific-event-types.html
+        // you should just look at the mysqldump source of log_event_print_value in log_event.cc
+        // https://github.com/mysql/mysql-server/blob/8.0/sql/log_event.cc
+        // or mariadb https://github.com/MariaDB/server/blob/10.5/sql/log_event_client.cc
         Ok(match self {
             ColumnType::Float(_) => {
                 let pack_length = cursor.read_u8()?;
@@ -102,6 +107,7 @@ impl ColumnType {
             },
             ColumnType::VarString | ColumnType::VarChar(_) => {
                 let max_length = cursor.read_u16::<LittleEndian>()?;
+                debug!("varstring column type: {:?} max_length {}", self, max_length);
                 assert!(max_length != 0);
                 ColumnType::VarChar(max_length)
             },
@@ -136,6 +142,7 @@ impl ColumnType {
                     let max_length = (!f1 as u16) << 4 & 0x300 | f2 as u16;
                     (ColumnType::from_byte(real_type), max_length)
                 };
+                debug!("MyString: f1={f1}=0x{f1:02x} f2={f2}=0x{f2:02x} -> real_type {real_type:?}, max_length {max_length}", f1=f1, f2=f2, real_type=real_type, max_length=max_length);
                 match real_type {
                     ColumnType::MyString => ColumnType::VarChar(max_length),
                     ColumnType::Set(_) => ColumnType::Set(max_length),
@@ -164,6 +171,12 @@ impl ColumnType {
     }
 
     pub fn read_value<R: Read>(&self, r: &mut R) -> Result<MySQLValue, Error> {
+        // Reference: according to MySQL Internals Manual -> The Binary Log -> Event Data for Specific Event Types
+        // https://dev.mysql.com/doc/internals/en/event-data-for-specific-event-types.html
+        // you should just look at the mysqldump source of log_event_print_value in log_event.cc
+        // https://github.com/mysql/mysql-server/blob/8.0/sql/log_event.cc
+        // You can also see the log generation code for a given MySQL version in field.cc
+        // https://github.com/mysql/mysql-server/blob/8.0/sql/field.cc
         match self {
             &ColumnType::Tiny => {
                 Ok(MySQLValue::SignedInteger(i64::from(r.read_i8()?)))
@@ -197,6 +210,7 @@ impl ColumnType {
                 } else {
                     read_one_byte_length_prefixed_string(r)?
                 };
+                debug!("Read {}-byte varchar {}", value.len(), value);
                 Ok(MySQLValue::String(value))
             },
             &ColumnType::Year => {

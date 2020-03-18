@@ -26,6 +26,8 @@ extern crate serde;
 extern crate serde_json;
 #[cfg(test)]
 #[macro_use] extern crate assert_matches;
+#[macro_use]
+extern crate log;
 
 use std::fs::File;
 use std::io::{Read, Seek};
@@ -71,7 +73,7 @@ impl ToString for Gtid {
 /// like the TableMapEvent and simplifies mapping GTIDs to individual events.
 pub struct BinlogEvent {
     pub type_code: event::TypeCode,
-    // warning: Y2038 Problem ahead
+    /// Seconds since unix epoch (1970-01-01T00:00:00 to 2106-02-07T06:28:15)
     pub timestamp: u32,
     pub gtid: Option<Gtid>,
     #[serde(skip_serializing_if = "Option::is_none")]

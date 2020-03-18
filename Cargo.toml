@@ -11,6 +11,7 @@ readme = "README.md"
 edition = "2018"
 
 [dependencies]
+log = "*"
 byteorder = "1"
 uuid = "0.6"
 base64 = "0.10"
